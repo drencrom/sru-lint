@@ -484,41 +484,50 @@ class LaunchpadHelper:
         """
         return f"https://launchpad.net/ubuntu/+source/{package_name}/+publishinghistory"
 
-    def has_sru_template(self, bug_number: int) -> bool:
-        """
-        Check if a bug has the SRU template applied in its description.
+    # (label, regex) pairs for the SRU template sections expected in a bug
+    # description. Match is case-insensitive with flexible whitespace inside
+    # the square brackets.
+    SRU_TEMPLATE_TAGS: tuple[tuple[str, str], ...] = (
+        ("[Impact]", r"\[\s*Impact\s*\]"),
+        ("[Test Plan]", r"\[\s*Test\s+Plan\s*\]"),
+        ("[Where problems could occur]", r"\[\s*Where\s+problems\s+could\s+occur\s*\]"),
+    )
+
+    def has_sru_template(self, bug_number: int) -> list[str]:
+        """Return the SRU template tags missing from a bug's description.
+
+        Each of :attr:`SRU_TEMPLATE_TAGS` is searched for case-insensitively
+        with flexible whitespace inside the brackets. The return value is the
+        list of tag labels (e.g. ``"[Impact]"``) NOT found in the description;
+        an empty list means the template is complete.
+
+        Note the polarity change from the previous bool API: an empty list
+        is the "all present" case, so callers can write ``if missing:``.
 
         Args:
-            bug_number: The Launchpad bug number
+            bug_number: The Launchpad bug number.
+
         Returns:
-            True if the SRU template is found, False otherwise
+            List of missing tag labels (empty list when none are missing).
         """
         bug = self.get_bug(bug_number)
-        if not bug:
-            return False
-
         self.logger.debug(f"Checking SRU template for bug #{bug_number}")
         description = bug.description or ""
 
-        # Check for SRU template keywords with flexible spacing around square brackets
-        # Patterns match with and without spaces after/before square brackets
-        sru_keyword_patterns = [
-            r"\[\s*Impact\s*\]",
-            r"\[\s*Test\s+Plan\s*\]",
-            r"\[\s*Where\s+problems\s+could\s+occur\s*\]",
-        ]
-
-        keywords_found = 0
-
-        for pattern in sru_keyword_patterns:
+        missing: list[str] = []
+        for label, pattern in self.SRU_TEMPLATE_TAGS:
             if re.search(pattern, description, re.IGNORECASE):
-                self.logger.debug(
-                    f"Found SRU template keyword pattern '{pattern}' in bug #{bug_number}"
-                )
-                keywords_found += 1
+                self.logger.debug(f"Found SRU tag {label!r} in bug #{bug_number}")
+            else:
+                missing.append(label)
 
-        self.logger.debug(f"LP: #{bug_number} has {keywords_found} SRU template keywords")
-        return keywords_found > 1
+        if missing:
+            self.logger.debug(
+                f"LP: #{bug_number} is missing SRU template tags: {missing}"
+            )
+        else:
+            self.logger.debug(f"LP: #{bug_number} has a complete SRU template")
+        return missing
 
 
 # Create a single global instance

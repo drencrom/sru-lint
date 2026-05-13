@@ -388,6 +388,47 @@ def output_feedback(feedback: list[FeedbackItem], output_format: OutputFormat):
         output_console_feedback(feedback)
 
 
+def output_summary(
+    error_count: int,
+    warning_count: int,
+    info_count: int,
+    output_format: OutputFormat,
+):
+    """Print a colored one-line summary of feedback counts.
+
+    Skipped in JSON mode (the array of items is itself the machine-readable
+    summary) and in quiet mode. When there is no feedback at all,
+    ``output_console_feedback`` already prints the "no issues found"
+    banner, so nothing more is needed here.
+    """
+    if output_format == OutputFormat.json or global_options.quiet:
+        return
+    if error_count == 0 and warning_count == 0 and info_count == 0:
+        return
+
+    parts: list[str] = []
+    if error_count:
+        parts.append(
+            typer.style(
+                f"{error_count} error{'s' if error_count != 1 else ''}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+    if warning_count:
+        parts.append(
+            typer.style(
+                f"{warning_count} warning{'s' if warning_count != 1 else ''}",
+                fg=typer.colors.YELLOW,
+                bold=True,
+            )
+        )
+    if info_count:
+        parts.append(typer.style(f"{info_count} info", fg=typer.colors.BLUE, bold=True))
+
+    typer.echo(f"\nSummary: {', '.join(parts)}")
+
+
 def show_processing_summary(processed_files, plugins, output_format: OutputFormat):
     """Show a summary of what will be processed."""
     if output_format == OutputFormat.json or global_options.quiet:
@@ -488,6 +529,7 @@ def check(
 
     # Output results
     output_feedback(feedback, format)
+    output_summary(error_count, warning_count, info_count, format)
 
     # Exit with error code if there are any errors
     if error_count > 0:

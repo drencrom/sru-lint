@@ -217,20 +217,6 @@ class Plugin(ABC):
             message=message, span=feedback_span, rule_id=rule_id, severity=severity, doc_url=doc_url
         )
 
-        # Log the feedback creation based on severity
-        if severity == Severity.ERROR:
-            self.logger.error(
-                f"[{rule_id}] {message} at {feedback_span.path}:{feedback_span.start_line}"
-            )
-        elif severity == Severity.WARNING:
-            self.logger.warning(
-                f"[{rule_id}] {message} at {feedback_span.path}:{feedback_span.start_line}"
-            )
-        else:
-            self.logger.info(
-                f"[{rule_id}] {message} at {feedback_span.path}:{feedback_span.start_line}"
-            )
-
         self.add_feedback(feedback_item)
         return feedback_item
 

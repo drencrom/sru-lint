@@ -7,6 +7,7 @@ Uses thread-local storage for connections (httplib2 is not thread-safe).
 import re
 import threading
 
+from debian.debian_support import Version
 from launchpadlib import uris
 from launchpadlib.credentials import KeyringCredentialStore, SystemWideConsumer
 from launchpadlib.launchpad import Launchpad
@@ -33,6 +34,13 @@ class LaunchpadHelper:
     SERVICE_ROOT = "production"
     CACHE_DIR = "~/.launchpadlib/cache"
     API_VERSION = "devel"
+
+    PRO_PPAS = ["ppa:ubuntu-esm/esm-infra-security", "ppa:ubuntu-esm/esm-infra-security-staging",
+                "ppa:ubuntu-esm/esm-apps-security", "ppa:ubuntu-esm/esm-apps-security-staging",
+                "ppa:ubuntu-esm/esm-infra-legacy-security", "ppa:ubuntu-esm/esm-infra-legacy-security-staging",
+                "ppa:ubuntu-esm/esm-infra-updates", "ppa:ubuntu-esm/esm-infra-updates-staging",
+                "ppa:ubuntu-esm/esm-apps-updates", "ppa:ubuntu-esm/esm-apps-updates-staging",
+                "ppa:ubuntu-esm/esm-infra-legacy-updates", "ppa:ubuntu-esm/esm-infra-legacy-updates-staging"]
 
     def __init__(self):
         """Initialize the LaunchpadHelper with a thread-local connection."""
@@ -181,6 +189,76 @@ class LaunchpadHelper:
         """Get the Ubuntu main archive object for the current thread."""
         self._ensure_connection()
         return _thread_local.archive
+
+    @staticmethod
+    def _parse_ppa_reference(reference: str) -> tuple[str, str]:
+        """Parse a PPA reference into ``(owner, ppa_name)``.
+
+        Accepts either the canonical short form ``ppa:<owner>/<name>``
+        or the bare ``<owner>/<name>``.
+
+        Raises:
+            ValueError: If the reference is not in a recognized form.
+        """
+        cleaned = reference.strip()
+        if cleaned.startswith("ppa:"):
+            cleaned = cleaned[len("ppa:") :]
+        if cleaned.count("/") != 1 or cleaned.startswith("/") or cleaned.endswith("/"):
+            raise ValueError(
+                f"Invalid PPA reference {reference!r}; "
+                "expected '[ppa:]<owner>/<name>'"
+            )
+        owner, name = cleaned.split("/", 1)
+        return owner, name
+
+    def get_highest_version_in_ppa(
+        self, ppa_reference: str, package_name: str
+    ) -> str | None:
+        """Return the highest published version of ``package_name`` in a PPA.
+
+        Walks the PPA's currently-published source publications for the
+        given package and returns the highest version under Debian version
+        ordering (epoch, upstream, revision). The same source/version can
+        appear in multiple distroseries; the maximum across them wins.
+
+        Args:
+            ppa_reference: PPA in the form ``ppa:<owner>/<name>`` (the
+                ``ppa:`` prefix is optional, e.g.
+                ``ppa:ubuntu-esm/esm-infra-security``).
+            package_name: Source package name to query.
+
+        Returns:
+            The highest published version string, or ``None`` if the
+            package has no current publications in the PPA.
+
+        Raises:
+            ValueError: If ``ppa_reference`` is malformed.
+        """
+        self._ensure_connection()
+        owner, name = self._parse_ppa_reference(ppa_reference)
+
+        self.logger.debug(f"Resolving PPA {owner}/{name}")
+        archive = _thread_local.launchpad.people[owner].getPPAByName(
+            distribution=_thread_local.ubuntu, name=name
+        )
+
+        publications = archive.getPublishedSources(
+            source_name=package_name,
+            exact_match=True,
+            status="Published",
+        )
+        versions = [pub.source_package_version for pub in publications]
+        if not versions:
+            self.logger.debug(
+                f"No published versions of {package_name!r} in {owner}/{name}"
+            )
+            return None
+
+        highest = max(versions, key=Version)
+        self.logger.debug(
+            f"Highest version of {package_name!r} in {owner}/{name}: {highest}"
+        )
+        return highest
 
     def get_bug(self, bug_number: int):
         """

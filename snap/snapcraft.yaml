@@ -18,9 +18,15 @@ confinement: strict
 apps:
   sru-lint:
     command: bin/sru-lint
+    environment:
+      # Skip webbrowser.open's trial-and-error through unavailable browser
+      # executables and go straight to xdg-open, which snapd redirects to
+      # the host's default browser when the `desktop` plug is connected.
+      BROWSER: xdg-open
     plugs:
       - home
       - network
+      - desktop
 
 adopt-info: sru-lint
 

@@ -16,6 +16,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from sru_lint.common.errors import ErrorEnumEncoder
 from sru_lint.common.feedback import FeedbackItem
+from sru_lint.common.launchpad_helper import get_launchpad_helper
 from sru_lint.common.logging import get_logger, setup_logger
 from sru_lint.common.patch_processor import process_patch_content
 from sru_lint.common.ui.snippet import render_snippet
@@ -387,6 +388,47 @@ def output_feedback(feedback: list[FeedbackItem], output_format: OutputFormat):
         output_console_feedback(feedback)
 
 
+def output_summary(
+    error_count: int,
+    warning_count: int,
+    info_count: int,
+    output_format: OutputFormat,
+):
+    """Print a colored one-line summary of feedback counts.
+
+    Skipped in JSON mode (the array of items is itself the machine-readable
+    summary) and in quiet mode. When there is no feedback at all,
+    ``output_console_feedback`` already prints the "no issues found"
+    banner, so nothing more is needed here.
+    """
+    if output_format == OutputFormat.json or global_options.quiet:
+        return
+    if error_count == 0 and warning_count == 0 and info_count == 0:
+        return
+
+    parts: list[str] = []
+    if error_count:
+        parts.append(
+            typer.style(
+                f"{error_count} error{'s' if error_count != 1 else ''}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+    if warning_count:
+        parts.append(
+            typer.style(
+                f"{warning_count} warning{'s' if warning_count != 1 else ''}",
+                fg=typer.colors.YELLOW,
+                bold=True,
+            )
+        )
+    if info_count:
+        parts.append(typer.style(f"{info_count} info", fg=typer.colors.BLUE, bold=True))
+
+    typer.echo(f"\nSummary: {', '.join(parts)}")
+
+
 def show_processing_summary(processed_files, plugins, output_format: OutputFormat):
     """Show a summary of what will be processed."""
     if output_format == OutputFormat.json or global_options.quiet:
@@ -487,6 +529,7 @@ def check(
 
     # Output results
     output_feedback(feedback, format)
+    output_summary(error_count, warning_count, info_count, format)
 
     # Exit with error code if there are any errors
     if error_count > 0:
@@ -526,6 +569,47 @@ def plugins():
         logger.debug(
             f"Plugin {plugin_name}: {plugin.__class__.__module__}.{plugin.__class__.__name__}"
         )
+
+
+@app.command()
+def login():
+    """
+    Authenticate with Launchpad via OAuth.
+
+    Opens a browser to authorize sru-lint and caches the credentials for
+    future runs. Re-run this command only if the cached credentials expire
+    or are revoked.
+    """
+    logger = get_logger("cli")
+    logger.info("Starting Launchpad login")
+
+    helper = get_launchpad_helper()
+    try:
+        lp = helper.login()
+    except Exception as e:
+        logger.error(f"Launchpad login failed: {e}")
+        typer.echo(f"Error: Launchpad login failed: {e}", err=True)
+        raise typer.Exit(code=2) from None
+
+    me = lp.me
+    typer.secho(
+        f"✓ Logged in to Launchpad as {me.name} ({me.display_name})",
+        fg=typer.colors.GREEN,
+    )
+
+    if not helper.credentials_persisted:
+        typer.secho(
+            "\n⚠ Credentials were NOT persisted to a keyring.\n"
+            "  `sru-lint check` cannot reuse this login and will fall back "
+            "to anonymous access, so private bugs will remain invisible.\n"
+            "  Likely causes:\n"
+            "    • No usable keyring backend (no GNOME Keyring / KWallet running)\n"
+            "    • Headless session with no keyring daemon\n"
+            "    • Snap confinement blocking access to the keyring",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command()

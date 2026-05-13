@@ -4,7 +4,10 @@ import pkgutil
 import sys
 
 import sru_lint.plugins  # import the plugins module or package
+from sru_lint.common.logging import get_logger
 from sru_lint.plugins.plugin_base import Plugin
+
+logger = get_logger("plugin_manager")
 
 
 class PluginManager:
@@ -61,6 +64,8 @@ class PluginManager:
                 # If this is a package, recursively import its submodules
                 if ispkg:
                     PluginManager._import_submodules_recursively(submodule)
-            except (ImportError, Exception):
-                # Silently continue with other modules if import fails
-                pass
+            except Exception:
+                # Continue with other modules if import fails, but log so a
+                # broken or shadowed plugin is not silently dropped from the
+                # discovered set.
+                logger.warning("Skipping plugin module %s: import failed", name, exc_info=True)

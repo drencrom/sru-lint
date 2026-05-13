@@ -93,8 +93,8 @@ class TestSRUTemplate(unittest.TestCase):
         # Mock bug extraction
         mock_extract_bugs.return_value = [1234567]
 
-        # Mock Launchpad helper - bug has SRU template
-        self.mock_lp_helper.has_sru_template.return_value = True
+        # Mock Launchpad helper - bug has SRU template (no missing tags)
+        self.mock_lp_helper.has_sru_template.return_value = []
 
         self.plugin.process_file(processed_file)
 
@@ -118,8 +118,12 @@ class TestSRUTemplate(unittest.TestCase):
         # Mock bug extraction
         mock_extract_bugs.return_value = [1234567]
 
-        # Mock Launchpad helper - bug lacks SRU template
-        self.mock_lp_helper.has_sru_template.return_value = False
+        # Mock Launchpad helper - bug missing all three template tags
+        self.mock_lp_helper.has_sru_template.return_value = [
+            "[Impact]",
+            "[Test Plan]",
+            "[Where problems could occur]",
+        ]
 
         self.plugin.process_file(processed_file)
 
@@ -128,7 +132,11 @@ class TestSRUTemplate(unittest.TestCase):
         feedback = self.plugin.feedback[0]
         self.assertEqual(feedback.rule_id, ErrorCode.SRU_TEMPLATE_MISSING)
         self.assertEqual(feedback.severity, Severity.ERROR)
-        self.assertIn("SRU template not found for bug LP: ", feedback.message)
+        self.assertIn("SRU template incomplete for bug LP: #1234567", feedback.message)
+        # Each missing tag must appear in the feedback message.
+        self.assertIn("[Impact]", feedback.message)
+        self.assertIn("[Test Plan]", feedback.message)
+        self.assertIn("[Where problems could occur]", feedback.message)
 
     @patch("sru_lint.common.launchpad_helper.LaunchpadHelper.extract_lp_bugs")
     def test_process_file_sru_multiple_bugs(self, mock_extract_bugs):
@@ -147,9 +155,10 @@ class TestSRUTemplate(unittest.TestCase):
         # Mock bug extraction
         mock_extract_bugs.return_value = [1234567, 7654321]
 
-        # Mock Launchpad helper - first bug has template, second doesn't
+        # Mock Launchpad helper - first bug has full template, second is
+        # missing one tag.
         def mock_has_template(bug_no):
-            return bug_no == 1234567
+            return [] if bug_no == 1234567 else ["[Test Plan]"]
 
         self.mock_lp_helper.has_sru_template.side_effect = mock_has_template
 
@@ -159,7 +168,8 @@ class TestSRUTemplate(unittest.TestCase):
         self.assertEqual(len(self.plugin.feedback), 1)
         feedback = self.plugin.feedback[0]
         self.assertEqual(feedback.rule_id, ErrorCode.SRU_TEMPLATE_MISSING)
-        self.assertIn("SRU template not found for bug LP: #7654321", feedback.message)
+        self.assertIn("SRU template incomplete for bug LP: #7654321", feedback.message)
+        self.assertIn("[Test Plan]", feedback.message)
 
         # Should have checked both bugs
         self.assertEqual(self.mock_lp_helper.has_sru_template.call_count, 2)
@@ -244,8 +254,8 @@ class TestSRUTemplate(unittest.TestCase):
         # Mock bug extraction - should find both bugs in the text
         mock_extract_bugs.return_value = [1234567, 7654321]
 
-        # Mock Launchpad helper - SRU bug has template
-        self.mock_lp_helper.has_sru_template.return_value = True
+        # Mock Launchpad helper - SRU bug has complete template (no missing tags)
+        self.mock_lp_helper.has_sru_template.return_value = []
 
         self.plugin.process_file(processed_file)
 

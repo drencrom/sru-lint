@@ -8,3 +8,5 @@ class DocLinks:
     )
     VERSION_STRING_FORMAT = "https://documentation.ubuntu.com/project/contributors/patching/commit-changes/#version-string-format"
     SRU_TEMPLATE_FORMAT = "https://documentation.ubuntu.com/project/SRU/reference/bug-template/#reference-sru-bug-template"
+
+    ESM_VERSION_SUFFIX = "https://canonical-security-engineering-handbook.readthedocs-hosted.com/docs/esm/technical-details/"

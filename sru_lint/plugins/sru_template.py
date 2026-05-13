@@ -41,17 +41,21 @@ class SRUTemplate(Plugin):
             for bug in lpbugs:
                 try:
                     self.logger.debug(f"Checking SRU template for bug: {bug}")
-                    if not self.lp_helper.has_sru_template(bug):
-                        self.logger.warning(f"SRU template not found for bug LP: #{bug}")
+                    missing = self.lp_helper.has_sru_template(bug)
+                    if missing:
+                        missing_list = ", ".join(missing)
                         self.create_line_feedback(
-                            message=f"SRU template not found for bug LP: #{bug}",
+                            message=(
+                                f"SRU template incomplete for bug LP: #{bug}; "
+                                f"missing: {missing_list}"
+                            ),
                             rule_id=ErrorCode.SRU_TEMPLATE_MISSING,
                             source_span=processed_file.source_span,
                             target_line_content=f"LP: #{bug}",
                             doc_url=DocLinks.SRU_TEMPLATE_FORMAT,
                         )
                 except Exception as e:
-                    self.logger.error(f"Error checking SRU template for bug LP: #{bug}: {e}")
+                    self.logger.error(f"Error checking SRU template for bug LP: #{bug}.")
                     self.create_line_feedback(
                         message=f"Error checking SRU template for bug LP: #{bug}: {str(e)}",
                         rule_id=ErrorCode.SRU_LP_API_ERROR,

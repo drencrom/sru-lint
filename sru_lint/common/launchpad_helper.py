@@ -7,6 +7,9 @@ Uses thread-local storage for connections (httplib2 is not thread-safe).
 import re
 import threading
 
+from debian.debian_support import Version
+from launchpadlib import uris
+from launchpadlib.credentials import KeyringCredentialStore, SystemWideConsumer
 from launchpadlib.launchpad import Launchpad
 
 from sru_lint.common.errors import ErrorCode
@@ -32,24 +35,155 @@ class LaunchpadHelper:
     Each thread gets its own Launchpad connection.
     """
 
+    APPLICATION_NAME = "sru-lint"
+    SERVICE_ROOT = "production"
+    CACHE_DIR = "~/.launchpadlib/cache"
+    API_VERSION = "devel"
+
+    PRO_PPAS = [
+        "ppa:ubuntu-esm/esm-infra-security",
+        "ppa:ubuntu-esm/esm-infra-security-staging",
+        "ppa:ubuntu-esm/esm-apps-security",
+        "ppa:ubuntu-esm/esm-apps-security-staging",
+        "ppa:ubuntu-esm/esm-infra-legacy-security",
+        "ppa:ubuntu-esm/esm-infra-legacy-security-staging",
+        "ppa:ubuntu-esm/esm-infra-updates",
+        "ppa:ubuntu-esm/esm-infra-updates-staging",
+        "ppa:ubuntu-esm/esm-apps-updates",
+        "ppa:ubuntu-esm/esm-apps-updates-staging",
+        "ppa:ubuntu-esm/esm-infra-legacy-updates",
+        "ppa:ubuntu-esm/esm-infra-legacy-updates-staging",
+    ]
+
     def __init__(self):
         """Initialize the LaunchpadHelper with a thread-local connection."""
         self.logger = get_logger("launchpad_helper")
+        # Set by login() to indicate whether OAuth creds round-tripped
+        # successfully through the keyring. None means login() was never
+        # called on this instance.
+        self.credentials_persisted: bool | None = None
         self._ensure_connection()
 
     def _ensure_connection(self):
-        """Ensure a Launchpad connection exists for the current thread."""
-        if not hasattr(_thread_local, "launchpad"):
+        """Ensure a Launchpad connection exists for the current thread.
+
+        If credentials from a prior ``sru-lint login`` are present in the
+        keyring, the connection is authenticated (so private bugs are
+        visible). Otherwise an anonymous session is opened so non-interactive
+        runs never trigger a browser OAuth prompt.
+        """
+        if hasattr(_thread_local, "launchpad"):
+            return
+
+        thread_name = threading.current_thread().name
+        if self._has_stored_credentials():
+            self.logger.info(f"Using stored Launchpad credentials for thread {thread_name}")
+            _thread_local.launchpad = Launchpad.login_with(
+                self.APPLICATION_NAME,
+                self.SERVICE_ROOT,
+                self.CACHE_DIR,
+                version=self.API_VERSION,
+            )
+        else:
             self.logger.info(
-                f"Initializing Launchpad connection for thread {threading.current_thread().name}"
+                f"No stored credentials; opening anonymous Launchpad session "
+                f"for thread {thread_name}"
             )
-            cachedir = "~/.launchpadlib/cache"
             _thread_local.launchpad = Launchpad.login_anonymously(
-                "sru-lint", "production", cachedir, version="devel"
+                self.APPLICATION_NAME,
+                self.SERVICE_ROOT,
+                self.CACHE_DIR,
+                version=self.API_VERSION,
             )
-            _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
-            _thread_local.archive = _thread_local.ubuntu.main_archive
-            self.logger.debug("Launchpad connection established")
+        _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
+        _thread_local.archive = _thread_local.ubuntu.main_archive
+        self.logger.debug("Launchpad connection established")
+
+    @classmethod
+    def _has_stored_credentials(cls) -> bool:
+        """Return True if launchpadlib has OAuth credentials cached for this app.
+
+        Non-interactive probe: looks up the same keyring entry that
+        launchpadlib's KeyringCredentialStore writes to during login_with.
+        Never triggers the OAuth browser flow.
+
+        The credential is stored under ``unique_consumer_id``, which
+        launchpadlib derives as ``consumer.key + "@" + service_root_url``
+        (see ``RequestTokenAuthorizationEngine.unique_consumer_id``) — not
+        the bare consumer key, which would miss the entry.
+        """
+        try:
+            store = KeyringCredentialStore()
+            consumer_key = SystemWideConsumer(cls.APPLICATION_NAME).key
+            service_root_url = uris.lookup_service_root(cls.SERVICE_ROOT)
+            unique_consumer_id = f"{consumer_key}@{service_root_url}"
+            return store.load(unique_consumer_id) is not None
+        except Exception:
+            # Locked / missing / unreadable keyring — treat as "no creds"
+            # rather than failing the whole CLI. The anonymous fallback
+            # keeps `check` usable.
+            return False
+
+    def login(self) -> Launchpad:
+        """
+        Perform an authenticated Launchpad login via OAuth.
+
+        Triggers the browser-based authorization flow on first use and caches
+        the resulting credentials so subsequent invocations reuse them.
+        Replaces the current thread's connection with the authenticated one.
+
+        After the OAuth flow completes, this method verifies that credentials
+        were actually persisted by re-loading them from the keyring.
+        ``self.credentials_persisted`` is set to True on a successful
+        round-trip, False otherwise. Persistence can fail silently when
+        no usable keyring backend is available (headless session, missing
+        GNOME Keyring / KWallet daemon, or snap confinement blocking the
+        keyring); the login itself still succeeds for the current process.
+
+        Returns:
+            The authenticated Launchpad instance for the current thread.
+        """
+        self.logger.info(
+            f"Performing authenticated Launchpad login for thread {threading.current_thread().name}"
+        )
+
+        save_failed = False
+
+        def _on_save_failed():
+            nonlocal save_failed
+            save_failed = True
+            self.logger.warning(
+                "launchpadlib reported credential persistence failure "
+                "(no writable keyring backend available)"
+            )
+
+        _thread_local.launchpad = Launchpad.login_with(
+            self.APPLICATION_NAME,
+            self.SERVICE_ROOT,
+            self.CACHE_DIR,
+            version=self.API_VERSION,
+            credential_save_failed=_on_save_failed,
+        )
+        _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
+        _thread_local.archive = _thread_local.ubuntu.main_archive
+
+        # Verify the save round-trips. The credential_save_failed callback
+        # catches explicit save errors, but some keyring chains silently
+        # no-op on save when no real backend is available — in that case
+        # save_failed stays False but the load returns None.
+        self.credentials_persisted = not save_failed and self._has_stored_credentials()
+        if self.credentials_persisted:
+            self.logger.debug(
+                "Authenticated Launchpad connection established and "
+                "credentials persisted to keyring"
+            )
+        else:
+            self.logger.warning(
+                "Authenticated to Launchpad but credentials did not persist; "
+                "subsequent runs will fall back to anonymous access"
+            )
+
+        return _thread_local.launchpad
 
     @property
     def launchpad(self) -> Launchpad:
@@ -69,6 +203,69 @@ class LaunchpadHelper:
         self._ensure_connection()
         return _thread_local.archive
 
+    @staticmethod
+    def _parse_ppa_reference(reference: str) -> tuple[str, str]:
+        """Parse a PPA reference into ``(owner, ppa_name)``.
+
+        Accepts either the canonical short form ``ppa:<owner>/<name>``
+        or the bare ``<owner>/<name>``.
+
+        Raises:
+            ValueError: If the reference is not in a recognized form.
+        """
+        cleaned = reference.strip()
+        if cleaned.startswith("ppa:"):
+            cleaned = cleaned[len("ppa:") :]
+        if cleaned.count("/") != 1 or cleaned.startswith("/") or cleaned.endswith("/"):
+            raise ValueError(
+                f"Invalid PPA reference {reference!r}; expected '[ppa:]<owner>/<name>'"
+            )
+        owner, name = cleaned.split("/", 1)
+        return owner, name
+
+    def get_highest_version_in_ppa(self, ppa_reference: str, package_name: str) -> str | None:
+        """Return the highest published version of ``package_name`` in a PPA.
+
+        Walks the PPA's currently-published source publications for the
+        given package and returns the highest version under Debian version
+        ordering (epoch, upstream, revision). The same source/version can
+        appear in multiple distroseries; the maximum across them wins.
+
+        Args:
+            ppa_reference: PPA in the form ``ppa:<owner>/<name>`` (the
+                ``ppa:`` prefix is optional, e.g.
+                ``ppa:ubuntu-esm/esm-infra-security``).
+            package_name: Source package name to query.
+
+        Returns:
+            The highest published version string, or ``None`` if the
+            package has no current publications in the PPA.
+
+        Raises:
+            ValueError: If ``ppa_reference`` is malformed.
+        """
+        self._ensure_connection()
+        owner, name = self._parse_ppa_reference(ppa_reference)
+
+        self.logger.debug(f"Resolving PPA {owner}/{name}")
+        archive = _thread_local.launchpad.people[owner].getPPAByName(
+            distribution=_thread_local.ubuntu, name=name
+        )
+
+        publications = archive.getPublishedSources(
+            source_name=package_name,
+            exact_match=True,
+            status="Published",
+        )
+        versions = [pub.source_package_version for pub in publications]
+        if not versions:
+            self.logger.debug(f"No published versions of {package_name!r} in {owner}/{name}")
+            return None
+
+        highest = max(versions, key=Version)
+        self.logger.debug(f"Highest version of {package_name!r} in {owner}/{name}: {highest}")
+        return str(highest)
+
     def get_bug(self, bug_number: int):
         """
         Get a bug by its number.
@@ -80,14 +277,11 @@ class LaunchpadHelper:
             The bug object from Launchpad, or None if not found
         """
         self._ensure_connection()
-        try:
-            self.logger.debug(f"Fetching bug #{bug_number}")
-            bug = _thread_local.launchpad.bugs[bug_number]
-            self.logger.debug(f"Successfully fetched bug #{bug_number}")
-            return bug
-        except Exception as e:
-            self.logger.error(f"Error fetching bug #{bug_number}: {e}")
-            return None
+
+        self.logger.debug(f"Fetching bug #{bug_number}")
+        bug = _thread_local.launchpad.bugs[bug_number]
+        self.logger.debug(f"Successfully fetched bug #{bug_number}")
+        return bug
 
     def is_bug_targeted(self, bug_number: int, package: str, distribution: str) -> bool:
         """
@@ -437,41 +631,48 @@ class LaunchpadHelper:
         """
         return f"https://launchpad.net/ubuntu/+source/{package_name}/+publishinghistory"
 
-    def has_sru_template(self, bug_number: int) -> bool:
-        """
-        Check if a bug has the SRU template applied in its description.
+    # (label, regex) pairs for the SRU template sections expected in a bug
+    # description. Match is case-insensitive with flexible whitespace inside
+    # the square brackets.
+    SRU_TEMPLATE_TAGS: tuple[tuple[str, str], ...] = (
+        ("[Impact]", r"\[\s*Impact\s*\]"),
+        ("[Test Plan]", r"\[\s*Test\s+Plan\s*\]"),
+        ("[Where problems could occur]", r"\[\s*Where\s+problems\s+could\s+occur\s*\]"),
+    )
+
+    def has_sru_template(self, bug_number: int) -> list[str]:
+        """Return the SRU template tags missing from a bug's description.
+
+        Each of :attr:`SRU_TEMPLATE_TAGS` is searched for case-insensitively
+        with flexible whitespace inside the brackets. The return value is the
+        list of tag labels (e.g. ``"[Impact]"``) NOT found in the description;
+        an empty list means the template is complete.
+
+        Note the polarity change from the previous bool API: an empty list
+        is the "all present" case, so callers can write ``if missing:``.
 
         Args:
-            bug_number: The Launchpad bug number
+            bug_number: The Launchpad bug number.
+
         Returns:
-            True if the SRU template is found, False otherwise
+            List of missing tag labels (empty list when none are missing).
         """
         bug = self.get_bug(bug_number)
-        if not bug:
-            return False
-
         self.logger.debug(f"Checking SRU template for bug #{bug_number}")
         description = bug.description or ""
 
-        # Check for SRU template keywords with flexible spacing around square brackets
-        # Patterns match with and without spaces after/before square brackets
-        sru_keyword_patterns = [
-            r"\[\s*Impact\s*\]",
-            r"\[\s*Test\s+Plan\s*\]",
-            r"\[\s*Where\s+problems\s+could\s+occur\s*\]",
-        ]
-
-        keywords_found = 0
-
-        for pattern in sru_keyword_patterns:
+        missing: list[str] = []
+        for label, pattern in self.SRU_TEMPLATE_TAGS:
             if re.search(pattern, description, re.IGNORECASE):
-                self.logger.debug(
-                    f"Found SRU template keyword pattern '{pattern}' in bug #{bug_number}"
-                )
-                keywords_found += 1
+                self.logger.debug(f"Found SRU tag {label!r} in bug #{bug_number}")
+            else:
+                missing.append(label)
 
-        self.logger.debug(f"LP: #{bug_number} has {keywords_found} SRU template keywords")
-        return keywords_found > 1
+        if missing:
+            self.logger.debug(f"LP: #{bug_number} is missing SRU template tags: {missing}")
+        else:
+            self.logger.debug(f"LP: #{bug_number} has a complete SRU template")
+        return missing
 
 
 # Create a single global instance

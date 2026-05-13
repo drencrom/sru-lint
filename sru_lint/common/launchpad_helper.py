@@ -259,7 +259,7 @@ class LaunchpadHelper:
 
         highest = max(versions, key=Version)
         self.logger.debug(f"Highest version of {package_name!r} in {owner}/{name}: {highest}")
-        return highest
+        return str(highest)
 
     def get_bug(self, bug_number: int):
         """

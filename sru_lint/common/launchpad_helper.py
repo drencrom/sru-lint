@@ -7,6 +7,8 @@ Uses thread-local storage for connections (httplib2 is not thread-safe).
 import re
 import threading
 
+from launchpadlib import uris
+from launchpadlib.credentials import KeyringCredentialStore, SystemWideConsumer
 from launchpadlib.launchpad import Launchpad
 
 from sru_lint.common.logging import get_logger
@@ -27,24 +29,140 @@ class LaunchpadHelper:
     Each thread gets its own Launchpad connection.
     """
 
+    APPLICATION_NAME = "sru-lint"
+    SERVICE_ROOT = "production"
+    CACHE_DIR = "~/.launchpadlib/cache"
+    API_VERSION = "devel"
+
     def __init__(self):
         """Initialize the LaunchpadHelper with a thread-local connection."""
         self.logger = get_logger("launchpad_helper")
+        # Set by login() to indicate whether OAuth creds round-tripped
+        # successfully through the keyring. None means login() was never
+        # called on this instance.
+        self.credentials_persisted: bool | None = None
         self._ensure_connection()
 
     def _ensure_connection(self):
-        """Ensure a Launchpad connection exists for the current thread."""
-        if not hasattr(_thread_local, "launchpad"):
+        """Ensure a Launchpad connection exists for the current thread.
+
+        If credentials from a prior ``sru-lint login`` are present in the
+        keyring, the connection is authenticated (so private bugs are
+        visible). Otherwise an anonymous session is opened so non-interactive
+        runs never trigger a browser OAuth prompt.
+        """
+        if hasattr(_thread_local, "launchpad"):
+            return
+
+        thread_name = threading.current_thread().name
+        if self._has_stored_credentials():
+            self.logger.info(f"Using stored Launchpad credentials for thread {thread_name}")
+            _thread_local.launchpad = Launchpad.login_with(
+                self.APPLICATION_NAME,
+                self.SERVICE_ROOT,
+                self.CACHE_DIR,
+                version=self.API_VERSION,
+            )
+        else:
             self.logger.info(
-                f"Initializing Launchpad connection for thread {threading.current_thread().name}"
+                f"No stored credentials; opening anonymous Launchpad session "
+                f"for thread {thread_name}"
             )
-            cachedir = "~/.launchpadlib/cache"
             _thread_local.launchpad = Launchpad.login_anonymously(
-                "sru-lint", "production", cachedir, version="devel"
+                self.APPLICATION_NAME,
+                self.SERVICE_ROOT,
+                self.CACHE_DIR,
+                version=self.API_VERSION,
             )
-            _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
-            _thread_local.archive = _thread_local.ubuntu.main_archive
-            self.logger.debug("Launchpad connection established")
+        _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
+        _thread_local.archive = _thread_local.ubuntu.main_archive
+        self.logger.debug("Launchpad connection established")
+
+    @classmethod
+    def _has_stored_credentials(cls) -> bool:
+        """Return True if launchpadlib has OAuth credentials cached for this app.
+
+        Non-interactive probe: looks up the same keyring entry that
+        launchpadlib's KeyringCredentialStore writes to during login_with.
+        Never triggers the OAuth browser flow.
+
+        The credential is stored under ``unique_consumer_id``, which
+        launchpadlib derives as ``consumer.key + "@" + service_root_url``
+        (see ``RequestTokenAuthorizationEngine.unique_consumer_id``) — not
+        the bare consumer key, which would miss the entry.
+        """
+        try:
+            store = KeyringCredentialStore()
+            consumer_key = SystemWideConsumer(cls.APPLICATION_NAME).key
+            service_root_url = uris.lookup_service_root(cls.SERVICE_ROOT)
+            unique_consumer_id = f"{consumer_key}@{service_root_url}"
+            return store.load(unique_consumer_id) is not None
+        except Exception:
+            # Locked / missing / unreadable keyring — treat as "no creds"
+            # rather than failing the whole CLI. The anonymous fallback
+            # keeps `check` usable.
+            return False
+
+    def login(self) -> Launchpad:
+        """
+        Perform an authenticated Launchpad login via OAuth.
+
+        Triggers the browser-based authorization flow on first use and caches
+        the resulting credentials so subsequent invocations reuse them.
+        Replaces the current thread's connection with the authenticated one.
+
+        After the OAuth flow completes, this method verifies that credentials
+        were actually persisted by re-loading them from the keyring.
+        ``self.credentials_persisted`` is set to True on a successful
+        round-trip, False otherwise. Persistence can fail silently when
+        no usable keyring backend is available (headless session, missing
+        GNOME Keyring / KWallet daemon, or snap confinement blocking the
+        keyring); the login itself still succeeds for the current process.
+
+        Returns:
+            The authenticated Launchpad instance for the current thread.
+        """
+        self.logger.info(
+            f"Performing authenticated Launchpad login for thread {threading.current_thread().name}"
+        )
+
+        save_failed = False
+
+        def _on_save_failed():
+            nonlocal save_failed
+            save_failed = True
+            self.logger.warning(
+                "launchpadlib reported credential persistence failure "
+                "(no writable keyring backend available)"
+            )
+
+        _thread_local.launchpad = Launchpad.login_with(
+            self.APPLICATION_NAME,
+            self.SERVICE_ROOT,
+            self.CACHE_DIR,
+            version=self.API_VERSION,
+            credential_save_failed=_on_save_failed,
+        )
+        _thread_local.ubuntu = _thread_local.launchpad.distributions["ubuntu"]
+        _thread_local.archive = _thread_local.ubuntu.main_archive
+
+        # Verify the save round-trips. The credential_save_failed callback
+        # catches explicit save errors, but some keyring chains silently
+        # no-op on save when no real backend is available — in that case
+        # save_failed stays False but the load returns None.
+        self.credentials_persisted = not save_failed and self._has_stored_credentials()
+        if self.credentials_persisted:
+            self.logger.debug(
+                "Authenticated Launchpad connection established and "
+                "credentials persisted to keyring"
+            )
+        else:
+            self.logger.warning(
+                "Authenticated to Launchpad but credentials did not persist; "
+                "subsequent runs will fall back to anonymous access"
+            )
+
+        return _thread_local.launchpad
 
     @property
     def launchpad(self) -> Launchpad:
@@ -75,14 +193,11 @@ class LaunchpadHelper:
             The bug object from Launchpad, or None if not found
         """
         self._ensure_connection()
-        try:
-            self.logger.debug(f"Fetching bug #{bug_number}")
-            bug = _thread_local.launchpad.bugs[bug_number]
-            self.logger.debug(f"Successfully fetched bug #{bug_number}")
-            return bug
-        except Exception as e:
-            self.logger.error(f"Error fetching bug #{bug_number}: {e}")
-            return None
+
+        self.logger.debug(f"Fetching bug #{bug_number}")
+        bug = _thread_local.launchpad.bugs[bug_number]
+        self.logger.debug(f"Successfully fetched bug #{bug_number}")
+        return bug
 
     def is_bug_targeted(self, bug_number: int, package: str, distribution: str) -> bool:
         """

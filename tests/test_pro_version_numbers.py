@@ -156,8 +156,8 @@ class TestProVersionNumbers(unittest.TestCase):
             "ppa:ubuntu-esm/esm-infra-security": "1.2.3-0ubuntu1~esm1",
             "ppa:ubuntu-esm/esm-apps-security": "1.2.3-0ubuntu1~esm10",
         }
-        self.mock_lp.get_highest_version_in_ppa.side_effect = (
-            lambda ppa, _pkg: ppa_versions.get(ppa)
+        self.mock_lp.get_highest_version_in_ppa.side_effect = lambda ppa, _pkg: ppa_versions.get(
+            ppa
         )
 
         self.plugin.process_file(pf)

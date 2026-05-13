@@ -33,16 +33,13 @@ class ProVersionNumbers(Plugin):
         release = self._base_release(cl.distributions)
         if release is None or not is_esm_only_release(release):
             self.logger.debug(
-                f"Skipping: not an ESM-only release "
-                f"(distributions={cl.distributions!r})"
+                f"Skipping: not an ESM-only release (distributions={cl.distributions!r})"
             )
             return
 
         package = cl.get_package()
         changelog_version = str(cl.version)
-        self.logger.info(
-            f"Checking Pro PPAs for {package} {changelog_version} (release={release})"
-        )
+        self.logger.info(f"Checking Pro PPAs for {package} {changelog_version} (release={release})")
 
         highest_version: str | None = None
         highest_ppa: str | None = None
@@ -50,9 +47,7 @@ class ProVersionNumbers(Plugin):
             try:
                 ver = self.lp_helper.get_highest_version_in_ppa(ppa, package)
             except Exception as e:
-                self.logger.warning(
-                    f"Skipping {ppa}: {type(e).__name__}: {e}"
-                )
+                self.logger.warning(f"Skipping {ppa}: {type(e).__name__}: {e}")
                 continue
             if ver is None:
                 continue
@@ -68,8 +63,7 @@ class ProVersionNumbers(Plugin):
 
         if Version(changelog_version) > Version(highest_version):
             self.logger.info(
-                f"{package} {changelog_version} > {highest_version} "
-                f"(highest in {highest_ppa}); OK"
+                f"{package} {changelog_version} > {highest_version} (highest in {highest_ppa}); OK"
             )
             return
 

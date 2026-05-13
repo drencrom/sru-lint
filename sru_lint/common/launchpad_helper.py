@@ -35,12 +35,20 @@ class LaunchpadHelper:
     CACHE_DIR = "~/.launchpadlib/cache"
     API_VERSION = "devel"
 
-    PRO_PPAS = ["ppa:ubuntu-esm/esm-infra-security", "ppa:ubuntu-esm/esm-infra-security-staging",
-                "ppa:ubuntu-esm/esm-apps-security", "ppa:ubuntu-esm/esm-apps-security-staging",
-                "ppa:ubuntu-esm/esm-infra-legacy-security", "ppa:ubuntu-esm/esm-infra-legacy-security-staging",
-                "ppa:ubuntu-esm/esm-infra-updates", "ppa:ubuntu-esm/esm-infra-updates-staging",
-                "ppa:ubuntu-esm/esm-apps-updates", "ppa:ubuntu-esm/esm-apps-updates-staging",
-                "ppa:ubuntu-esm/esm-infra-legacy-updates", "ppa:ubuntu-esm/esm-infra-legacy-updates-staging"]
+    PRO_PPAS = [
+        "ppa:ubuntu-esm/esm-infra-security",
+        "ppa:ubuntu-esm/esm-infra-security-staging",
+        "ppa:ubuntu-esm/esm-apps-security",
+        "ppa:ubuntu-esm/esm-apps-security-staging",
+        "ppa:ubuntu-esm/esm-infra-legacy-security",
+        "ppa:ubuntu-esm/esm-infra-legacy-security-staging",
+        "ppa:ubuntu-esm/esm-infra-updates",
+        "ppa:ubuntu-esm/esm-infra-updates-staging",
+        "ppa:ubuntu-esm/esm-apps-updates",
+        "ppa:ubuntu-esm/esm-apps-updates-staging",
+        "ppa:ubuntu-esm/esm-infra-legacy-updates",
+        "ppa:ubuntu-esm/esm-infra-legacy-updates-staging",
+    ]
 
     def __init__(self):
         """Initialize the LaunchpadHelper with a thread-local connection."""
@@ -205,15 +213,12 @@ class LaunchpadHelper:
             cleaned = cleaned[len("ppa:") :]
         if cleaned.count("/") != 1 or cleaned.startswith("/") or cleaned.endswith("/"):
             raise ValueError(
-                f"Invalid PPA reference {reference!r}; "
-                "expected '[ppa:]<owner>/<name>'"
+                f"Invalid PPA reference {reference!r}; expected '[ppa:]<owner>/<name>'"
             )
         owner, name = cleaned.split("/", 1)
         return owner, name
 
-    def get_highest_version_in_ppa(
-        self, ppa_reference: str, package_name: str
-    ) -> str | None:
+    def get_highest_version_in_ppa(self, ppa_reference: str, package_name: str) -> str | None:
         """Return the highest published version of ``package_name`` in a PPA.
 
         Walks the PPA's currently-published source publications for the
@@ -249,15 +254,11 @@ class LaunchpadHelper:
         )
         versions = [pub.source_package_version for pub in publications]
         if not versions:
-            self.logger.debug(
-                f"No published versions of {package_name!r} in {owner}/{name}"
-            )
+            self.logger.debug(f"No published versions of {package_name!r} in {owner}/{name}")
             return None
 
         highest = max(versions, key=Version)
-        self.logger.debug(
-            f"Highest version of {package_name!r} in {owner}/{name}: {highest}"
-        )
+        self.logger.debug(f"Highest version of {package_name!r} in {owner}/{name}: {highest}")
         return highest
 
     def get_bug(self, bug_number: int):
@@ -522,9 +523,7 @@ class LaunchpadHelper:
                 missing.append(label)
 
         if missing:
-            self.logger.debug(
-                f"LP: #{bug_number} is missing SRU template tags: {missing}"
-            )
+            self.logger.debug(f"LP: #{bug_number} is missing SRU template tags: {missing}")
         else:
             self.logger.debug(f"LP: #{bug_number} has a complete SRU template")
         return missing

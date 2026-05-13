@@ -43,7 +43,6 @@ class SRUTemplate(Plugin):
                 try:
                     self.logger.debug(f"Checking SRU template for bug: {bug}")
                     if not self.lp_helper.has_sru_template(bug):
-                        self.logger.warning(f"SRU template not found for bug LP: #{bug}")
                         self.create_line_feedback(
                             message=f"SRU template not found for bug LP: #{bug}",
                             rule_id=ErrorCode.SRU_TEMPLATE_MISSING,

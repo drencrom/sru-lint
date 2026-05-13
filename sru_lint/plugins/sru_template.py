@@ -1,3 +1,4 @@
+from sru_lint.common.distro_helper import is_esm_only_release
 from sru_lint.common.doc_links import DocLinks
 from sru_lint.common.errors import ErrorCode
 from sru_lint.common.feedback import Severity
@@ -51,7 +52,7 @@ class SRUTemplate(Plugin):
                             doc_url=DocLinks.SRU_TEMPLATE_FORMAT,
                         )
                 except Exception as e:
-                    self.logger.error(f"Error checking SRU template for bug LP: #{bug}: {e}")
+                    self.logger.error(f"Error checking SRU template for bug LP: #{bug}.")
                     self.create_line_feedback(
                         message=f"Error checking SRU template for bug LP: #{bug}: {str(e)}",
                         rule_id=ErrorCode.SRU_LP_API_ERROR,

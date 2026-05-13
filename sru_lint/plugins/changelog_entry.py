@@ -2,6 +2,7 @@ from debian import changelog
 from debian.debian_support import Version
 
 from sru_lint.common.debian.changelog import DebianChangelogHeader, parse_header
+from sru_lint.common.distro_helper import is_esm_only_release
 from sru_lint.common.doc_links import DocLinks
 from sru_lint.common.errors import ErrorCode
 from sru_lint.common.feedback import FeedbackItem, Severity
@@ -72,6 +73,17 @@ class ChangelogEntry(Plugin):
                 continue
         if len(headers) > 1:
             self.check_version_order(processed_file, headers)
+
+        if is_esm_only_release(processed_file.release):
+            if not has_esm_suffix(headers[0].version):
+                self.create_line_feedback(
+                    message=f"Version '{headers[0].version}' should have an ESM suffix for ESM-only release '{processed_file.release}'",
+                    rule_id=ErrorCode.CHANGELOG_ESM_SUFFIX_MISSING,
+                    severity=Severity.WARNING,
+                    source_span=source_span,
+                    target_line_content=headers[0].version,
+                    doc_url=DocLinks.ESM_VERSION_SUFFIX,
+                )
 
     def check_distribution(self, distributions):
         """Check if the distribution field in the changelog is valid."""

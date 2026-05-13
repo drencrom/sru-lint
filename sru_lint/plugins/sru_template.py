@@ -1,4 +1,3 @@
-from sru_lint.common.distro_helper import is_esm_only_release
 from sru_lint.common.doc_links import DocLinks
 from sru_lint.common.errors import ErrorCode
 from sru_lint.common.feedback import Severity

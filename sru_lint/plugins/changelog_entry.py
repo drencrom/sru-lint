@@ -74,16 +74,16 @@ class ChangelogEntry(Plugin):
         if len(headers) > 1:
             self.check_version_order(processed_file, headers)
 
-        if is_esm_only_release(headers[0].series):
-            if not has_esm_suffix(headers[0].version):
-                self.create_line_feedback(
-                    message=f"Version '{headers[0].version}' should have an ESM suffix for ESM-only release '{headers[0].series}'",
-                    rule_id=ErrorCode.CHANGELOG_ESM_SUFFIX_MISSING,
-                    severity=Severity.WARNING,
-                    source_span=source_span,
-                    target_line_content=headers[0].version,
-                    doc_url=DocLinks.ESM_VERSION_SUFFIX,
-                )
+            if is_esm_only_release(headers[0].series):
+                if not has_esm_suffix(headers[0].version):
+                    self.create_line_feedback(
+                        message=f"Version '{headers[0].version}' should have an ESM suffix for ESM-only release '{headers[0].series}'",
+                        rule_id=ErrorCode.CHANGELOG_ESM_SUFFIX_MISSING,
+                        severity=Severity.WARNING,
+                        source_span=source_span,
+                        target_line_content=headers[0].version,
+                        doc_url=DocLinks.ESM_VERSION_SUFFIX,
+                    )
 
     def check_distribution(self, distributions):
         """Check if the distribution field in the changelog is valid."""

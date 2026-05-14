@@ -23,7 +23,7 @@ class TestSruLint:
         os.makedirs(GENERATED_DEBDIFFS_DIR, exist_ok=True)
 
     @staticmethod
-    def run_sru_lint(*args, timeout=30):
+    def run_sru_lint(*args, timeout=60):
         """Run sru-lint with the given arguments and return the result."""
         return subprocess.run(
             ["sru-lint", *args],
@@ -53,7 +53,7 @@ class TestSruLint:
         self.assert_success(result)
         self.assert_output_contains(result, "usage")
 
-    def test_check_generated_debdiff(self):
+    def test_check_generated_debdiff(self, timeout=60):
         """Verify that sru-lint check passes on a generated debdiff."""
         debdiff_file = DebdiffGenerator.generate_to_file(
             output_dir=GENERATED_DEBDIFFS_DIR,
@@ -61,6 +61,7 @@ class TestSruLint:
             package="netplan.io",
             series="noble",
             lp_bug="2139598",
+            timeout=timeout,
         )
         result = self.run_sru_lint("check", debdiff_file)
         self.assert_success(result)

@@ -56,13 +56,19 @@ class LaunchpadHelper:
     ]
 
     def __init__(self):
-        """Initialize the LaunchpadHelper with a thread-local connection."""
+        """Initialize the LaunchpadHelper.
+
+        The actual Launchpad connection is deferred until the first method
+        that needs it (via ``_ensure_connection``). Constructing this object
+        must not touch the network or the keyring, so that ``sru-lint
+        plugins`` and plugin instantiation never trigger an OAuth prompt
+        for plugins that don't end up querying Launchpad.
+        """
         self.logger = get_logger("launchpad_helper")
         # Set by login() to indicate whether OAuth creds round-tripped
         # successfully through the keyring. None means login() was never
         # called on this instance.
         self.credentials_persisted: bool | None = None
-        self._ensure_connection()
 
     def _ensure_connection(self):
         """Ensure a Launchpad connection exists for the current thread.

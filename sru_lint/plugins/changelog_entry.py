@@ -27,6 +27,8 @@ class ChangelogEntry(Plugin):
 
         self.check_changelog_headers(processed_file, source_span)
 
+        self.check_trailing_whitespace(processed_file.source_span)
+
         # Get content from the source span (only added lines)
         added_content = "\n".join(line.content for line in source_span.lines_added)
 
@@ -129,4 +131,24 @@ class ChangelogEntry(Plugin):
 
         if not errors_found:
             self.logger.info("Changelog versions are in correct order")
+        return self.feedback
+
+    def check_trailing_whitespace(self, source_span) -> list[FeedbackItem]:
+        """Check for trailing whitespace"""
+
+        self.logger.debug("Checking changelog for trailing whitespace")
+        errors_found = False
+        for line in source_span.lines_added:
+            if line.content.rstrip() != line.content:
+                self.create_line_feedback(
+                    message=f"Trailing whitespace error: d/changelog:{line.line_number}",
+                    rule_id=ErrorCode.CHANGELOG_TRAILING_WHITESPACE,
+                    severity=Severity.ERROR,
+                    source_span=source_span,
+                    target_line_content=line.content.rstrip(),
+                    doc_url=DocLinks.CHANGELOG_FORMAT,
+                )
+                errors_found = True
+        if not errors_found:
+            self.logger.info("Changelog has no trailing whitespace")
         return self.feedback

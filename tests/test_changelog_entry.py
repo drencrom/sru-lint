@@ -502,6 +502,47 @@ class TestChangelogEntry(unittest.TestCase):
         # Feedback should still be there after processing (process doesn't clear)
         self.assertGreater(len(self.plugin.feedback), 0)
 
+    def test_trailing_whitespace(self):
+        """Test that trailing whitespace is correctly detected"""
+        source_span_trailing_whitespace = create_test_source_span(
+            "debian/changelog", ["trailing whitespace "], [0], 1
+        )
+        source_span_no_trailing_whitespace = create_test_source_span(
+            "debian/changelog", ["no trailing whitespace"], [0], 1
+        )
+
+        self.plugin.check_trailing_whitespace(source_span_no_trailing_whitespace)
+        self.assertEqual(len(self.plugin.feedback), 0)
+
+        self.plugin.check_trailing_whitespace(source_span_trailing_whitespace)
+        self.assertEqual(len(self.plugin.feedback), 1)
+
+        # Verify the feedback has correct error code and severity
+        feedback = self.plugin.feedback[0]
+        self.assertEqual(feedback.rule_id, ErrorCode.CHANGELOG_TRAILING_WHITESPACE)
+        self.assertEqual(feedback.severity, Severity.ERROR)
+        self.assertIn("Trailing whitespace error", feedback.message)
+
+    def test_trailing_whitespace_multiline(self):
+        """Test trailing whitespace across multiple lines"""
+        source_span_multiline_no_trailing_whitespace = create_test_source_span(
+            "debian/changelog", ["foo", "bar", "baz"], [0, 1, 2], 1
+        )
+        source_span_multiline_with_trailing_whitespace = create_test_source_span(
+            "debian/changelog", ["foo", "bar ", "baz"], [0, 1, 2], 1
+        )
+
+        self.plugin.check_trailing_whitespace(source_span_multiline_no_trailing_whitespace)
+        self.assertEqual(len(self.plugin.feedback), 0)
+
+        self.plugin.check_trailing_whitespace(source_span_multiline_with_trailing_whitespace)
+        self.assertEqual(len(self.plugin.feedback), 1)
+
+        feedback = self.plugin.feedback[0]
+        self.assertEqual(feedback.rule_id, ErrorCode.CHANGELOG_TRAILING_WHITESPACE)
+        self.assertEqual(feedback.severity, Severity.ERROR)
+        self.assertIn("Trailing whitespace error", feedback.message)
+
 
 if __name__ == "__main__":
     unittest.main()

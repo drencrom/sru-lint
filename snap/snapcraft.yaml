@@ -22,11 +22,12 @@ apps:
       # Skip webbrowser.open's trial-and-error through unavailable browser
       # executables and go straight to xdg-open, which snapd redirects to
       # the host's default browser when the `desktop` plug is connected.
-      BROWSER: xdg-open
+      BROWSER: /bin/echo
     plugs:
       - home
       - network
       - desktop
+      - password-manager-service
 
 adopt-info: sru-lint
 

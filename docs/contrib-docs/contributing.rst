@@ -19,7 +19,7 @@ targets Python 3.12.
    cd sru-lint
    poetry install                                  # installs runtime + dev deps
 
-Common development commands, all run from the repo root:
+Common development commands, all run from the repository root:
 
 .. code-block:: bash
 
@@ -60,7 +60,7 @@ Code style and conventions
 - Type checking via ``mypy`` with ``--ignore-missing-imports``.
 - A ``.pre-commit-config.yaml`` is provided; install hooks with
   ``poetry run pre-commit install`` to run ruff/mypy on each commit.
-- Tests use ``unittest`` (stdlib) for plugin/unit tests. The
+- Tests use ``unittest`` (from the standard library) for plugin/unit tests. The
   ``tests/functional_tests/`` suite uses ``pytest`` and shells out to the
   installed ``sru-lint`` binary, so it requires a prior ``poetry install``.
 
@@ -70,8 +70,8 @@ Architecture overview
 A ``check`` run is a single pipeline wired in ``sru_lint/cli.py``:
 
 1. **Input resolution.** ``read_input_content`` accepts a file path, URL,
-   ``-`` (stdin), or a directory. A directory is treated as a git repo and
-   ``git_debdiff()`` synthesizes a debdiff by walking
+   ``-`` (standard input), or a directory. A directory is treated as a git
+   repository and ``git_debdiff()`` synthesizes a debdiff by walking
    ``git log debian/changelog`` to find the previous version's commit and
    diffing ``<that>..HEAD``.
 2. **Patch parsing.** ``sru_lint/common/patch_processor.py`` converts the
@@ -96,7 +96,7 @@ A ``check`` run is a single pipeline wired in ``sru_lint/cli.py``:
    ``doc_url``). Console output uses ``rich`` to render code snippets; JSON
    output uses ``ErrorEnumEncoder``.
 6. **Exit code.** ``1`` if any ``Severity.ERROR`` feedback was produced,
-   ``2`` for input errors (file not found, URL fetch failure, unparseable
+   ``2`` for input errors (file not found, URL fetch failure, malformed
    patch), ``0`` otherwise.
 
 Writing a new plugin
@@ -150,7 +150,7 @@ Defined in ``sru_lint/plugins/plugin_base.py``:
 - ``register_file_patterns(self)`` — override to call ``self.add_file_pattern("...")``
   for every path glob the plugin wants to see. Patterns are matched both as
   given and as ``*/pattern`` so ``debian/changelog`` matches whether the
-  diff is rooted at the repo or one level down.
+  diff is rooted at the repository or one level down.
 - ``process_file(self, processed_file)`` — **abstract**. Called once per
   matching file. Append findings via ``self.add_feedback(...)`` or use the
   ``create_feedback(...)`` / ``create_line_feedback(...)`` helpers, which
@@ -158,7 +158,7 @@ Defined in ``sru_lint/plugins/plugin_base.py``:
 - ``post_process(self)`` — optional end-of-run hook. Runs from ``__exit__``
   (the CLI wraps each plugin with ``with plugin:``).
 - ``self.logger`` is a child logger under ``plugins.<symbolic-name>``.
-- ``self.lp_helper`` is a preconfigured Launchpad helper — see
+- ``self.lp_helper`` is a ready-to-use Launchpad helper — see
   :ref:`launchpad-integration` below.
 
 .. _plugin-autoloading:
@@ -170,7 +170,7 @@ Plugin auto-loading
 the discovery:
 
 1. ``pkgutil.iter_modules`` walks ``sru_lint.plugins`` recursively,
-   importing every submodule and subpackage. Files that fail to import are
+   importing every submodule and nested package. Files that fail to import are
    logged at warning level and skipped — they will not silently disappear.
 2. ``inspect.getmembers`` then enumerates every class in those modules.
    Every concrete subclass of ``Plugin`` (other than ``Plugin`` itself) is
@@ -190,13 +190,13 @@ There is no manual registration list. Two consequences:
 Reporting findings
 ~~~~~~~~~~~~~~~~~~
 
-All rule IDs live in the ``ErrorCode`` enum in
+All rule IDs live in the ``ErrorCode`` enumeration in
 ``sru_lint/common/errors.py`` (e.g. ``CHANGELOG001``, ``PATCH002``,
 ``UCA_INVALID_PAIRING``). Use these instead of string literals so JSON
-output and downstream consumers stay stable. Add a new value to the enum
-when introducing a new rule.
+output and downstream consumers stay stable. Add a new value to the
+enumeration when introducing a new rule.
 
-The ``Severity`` enum (``sru_lint/common/feedback.py``) has ``ERROR``,
+The ``Severity`` enumeration (``sru_lint/common/feedback.py``) has ``ERROR``,
 ``WARNING``, and ``INFO``. Only ``ERROR`` causes a non-zero exit code from
 ``sru-lint check``.
 

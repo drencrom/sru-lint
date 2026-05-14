@@ -65,3 +65,5 @@ lastmod
 yaml
 Jira
 Kanban
+mypy
+debdiff

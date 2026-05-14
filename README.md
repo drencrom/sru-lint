@@ -36,6 +36,28 @@ sru-lint plugins  # if installed via snap
 poetry run sru-lint plugins  # if using Poetry
 ```
 
+## Authenticating to Launchpad
+
+By default `sru-lint` talks to Launchpad anonymously, which is enough for the
+public checks. ESM / Ubuntu Pro plugins query private PPAs (e.g.
+`ppa:ubuntu-esm/esm-infra-security`) and need an authenticated session —
+without it those checks are skipped or produce false negatives.
+
+To authenticate once and cache the OAuth credentials in your keyring:
+
+```bash
+sru-lint login                # opens a browser to authorize via OAuth
+poetry run sru-lint login     # equivalent when running from source
+```
+
+Subsequent `sru-lint check` runs reuse the cached credentials automatically.
+Re-run `sru-lint login` only if the credentials expire or are revoked.
+
+Note: if no usable keyring backend is available (headless session, snap
+confinement blocking the keyring, etc.) the credentials cannot persist and
+`sru-lint check` will fall back to anonymous access — `sru-lint login` will
+warn you when this happens.
+
 ## What it checks
 
 - **Changelog entries** (valid distributions, LP bugs, version ordering)
@@ -43,6 +65,18 @@ poetry run sru-lint plugins  # if using Poetry
 - **Launchpad integration** (bug targeting, SRU templates, publication history)
 - **Upload queue** conflicts
 - And more via the plugin system...
+
+## Development
+
+Run the full local check suite (ruff lint + format, mypy, unit tests, and
+functional tests) with a single command:
+
+```bash
+poetry run check-all
+```
+
+It runs every step even if an earlier one fails and prints a PASS/FAIL summary
+at the end, exiting non-zero if anything failed.
 
 ## License
 

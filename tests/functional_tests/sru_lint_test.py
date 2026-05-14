@@ -61,9 +61,8 @@ class TestSruLint:
             package="netplan.io",
             series="noble",
             lp_bug="2139598",
-            timeout=timeout,
         )
-        result = self.run_sru_lint("check", debdiff_file)
+        result = self.run_sru_lint("check", debdiff_file, timeout=120)
         self.assert_success(result)
 
     def test_check_debdiff_from_launchpad_url(self):

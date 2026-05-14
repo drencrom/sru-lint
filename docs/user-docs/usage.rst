@@ -27,8 +27,8 @@ Global options:
 
 ``-v``, ``-vv``
    Increase log verbosity. ``-v`` enables ``INFO``; ``-vv`` enables
-   ``DEBUG``. Logs are written to stderr so they do not pollute JSON
-   output on stdout.
+   ``DEBUG``. Logs are written to standard error so they do not pollute
+   JSON output on standard output.
 
 ``-q``, ``--quiet``
    Suppress everything below ``ERROR``-level logs.
@@ -97,9 +97,10 @@ Output formats
    finding, color-coded by severity, and a summary line.
 
 ``json``
-   A JSON array of findings on stdout — one object per finding with
-   ``message``, ``rule_id``, ``severity``, ``span`` (path, start/end line
-   and column), and optional ``doc_url``. Logs continue to go to stderr.
+   A JSON array of findings on standard output — one object per finding
+   with ``message``, ``rule_id``, ``severity``, ``span`` (path, start/end
+   line and column), and optional ``doc_url``. Logs continue to go to
+   standard error.
 
 .. code-block:: bash
 
